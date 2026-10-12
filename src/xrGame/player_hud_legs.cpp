@@ -135,6 +135,12 @@ bool player_legs_controller::ensure_model(const shared_str& sect, const shared_s
 
 // clean up later
 float legs_spine_offset_y = 0.1f;
+// Debug toggles (console) to isolate which step corrupts the body pose
+BOOL legs_dbg_no_model_calc = FALSE;
+BOOL legs_dbg_no_spine = FALSE;
+BOOL legs_dbg_no_hide = FALSE;
+BOOL legs_dbg_calc_actor_in_shadow = FALSE;
+BOOL legs_dbg_no_root_reset = FALSE;
 void player_legs_controller::copy_bones_from_actor(CActor* actor, bool isShadowPass)
 {
     if (!actor || !m_model)
@@ -144,18 +150,23 @@ void player_legs_controller::copy_bones_from_actor(CActor* actor, bool isShadowP
     if (!actor_K)
         return;
 
-    if (!isShadowPass)
-    {
+    if (!isShadowPass || legs_dbg_calc_actor_in_shadow)
         actor_K->CalculateBones(TRUE);
+
+    if (!isShadowPass && !legs_dbg_no_model_calc)
+    {
         m_model->CalculateBones_Invalidate();
         m_model->CalculateBones(TRUE);
     }
 
     u16 legs_root = m_model->LL_GetBoneRoot();
     CBoneInstance& root_bi = m_model->LL_GetBoneInstance(legs_root);
-    root_bi.mTransform.identity();
-    root_bi.mRenderTransform.mul_43(root_bi.mTransform,
-        m_model->LL_GetData(legs_root).m2b_transform);
+    if (!legs_dbg_no_root_reset)
+    {
+        root_bi.mTransform.identity();
+        root_bi.mRenderTransform.mul_43(root_bi.mTransform,
+            m_model->LL_GetData(legs_root).m2b_transform);
+    }
 
     // Always match bones by name. Copying by index is only valid when both
     // skeletons list their bones in the same order; models with the same bone
@@ -192,7 +203,7 @@ void player_legs_controller::copy_bones_from_actor(CActor* actor, bool isShadowP
 
     if (!isShadowPass)
     {
-        if (auto BoneID = m_model->LL_BoneID("bip01_spine"); BoneID != BI_NONE)
+        if (auto BoneID = m_model->LL_BoneID("bip01_spine"); !legs_dbg_no_spine && BoneID != BI_NONE)
         {
             auto& BoneInstance = m_model->LL_GetData(BoneID);
             auto& transform = m_model->LL_GetTransform(BoneInstance.GetParentID());
@@ -203,6 +214,8 @@ void player_legs_controller::copy_bones_from_actor(CActor* actor, bool isShadowP
         static LPCSTR bonesToHide[] = { "bip01_neck", "bip01_l_upperarm", "bip01_r_upperarm" };
         for (const auto& bone : bonesToHide)
         {
+            if (legs_dbg_no_hide)
+                break;
             u16 bone_id = m_model->LL_BoneID(bone);
             if (bone_id != BI_NONE)
             {

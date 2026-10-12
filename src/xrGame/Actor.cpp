@@ -2176,6 +2176,7 @@ BOOL legs_in_low_crouch = FALSE;
 BOOL legs_render_attachments_shadow = TRUE;
 extern BOOL g_legs_enabled;
 
+BOOL legs_dbg_shadow_actor = FALSE;
 bool canRenderLegs(CActor* actor, CHolderCustom* m_holder) noexcept
 {
     return g_legs_enabled
@@ -2228,7 +2229,7 @@ void CActor::renderable_Render(IDSGraphManager* DM)
                     needAdjust = true;
                 }
                 
-                if (canRenderLegs(this, m_holder))
+                if (canRenderLegs(this, m_holder) && !legs_dbg_shadow_actor)
                 {
                     Fvector diff(XFORMShadow.c);
                     diff.sub(XFORM().c);
