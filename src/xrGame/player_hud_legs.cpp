@@ -141,6 +141,7 @@ BOOL legs_dbg_no_spine = FALSE;
 BOOL legs_dbg_no_hide = FALSE;
 BOOL legs_dbg_calc_actor_in_shadow = FALSE;
 BOOL legs_dbg_no_root_reset = FALSE;
+BOOL legs_dbg_copy_render = FALSE;
 void player_legs_controller::copy_bones_from_actor(CActor* actor, bool isShadowPass)
 {
     if (!actor || !m_model)
@@ -178,7 +179,15 @@ void player_legs_controller::copy_bones_from_actor(CActor* actor, bool isShadowP
         if (BoneID != BI_NONE)
         {
             m_model->LL_GetTransform(ID).set(actor_K->LL_GetTransform(BoneID));
-            m_model->LL_GetTransform_R(ID).set(actor_K->LL_GetTransform_R(BoneID));
+            // The render (skinning) transform includes the model's own inverse
+            // bind pose (m2b). Rebuild it from the legs model's own bind pose
+            // instead of copying the actor's: if the actor visual and the legs
+            // visual differ (e.g. GFY replacing models), copying it twists the mesh.
+            if (legs_dbg_copy_render)
+                m_model->LL_GetTransform_R(ID).set(actor_K->LL_GetTransform_R(BoneID));
+            else
+                m_model->LL_GetTransform_R(ID).mul_43(m_model->LL_GetTransform(ID),
+                    m_model->LL_GetData(ID).m2b_transform);
         }
     }
 
@@ -196,8 +205,8 @@ void player_legs_controller::copy_bones_from_actor(CActor* actor, bool isShadowP
             if (BoneID != ID)
                 same_order = false;
         }
-        Msg("~ [player_legs] legs model [%s] bones=%u, actor bones=%u, matched=%u, same_order=%s",
-            m_visual_name.c_str(), m_model->LL_BoneCount(), actor_K->LL_BoneCount(), matched,
+        Msg("~ [player_legs] legs model [%s] actor visual [%s] bones=%u, actor bones=%u, matched=%u, same_order=%s",
+            m_visual_name.c_str(), actor->cNameVisual().c_str(), m_model->LL_BoneCount(), actor_K->LL_BoneCount(), matched,
             same_order ? "yes" : "no");
     }
 

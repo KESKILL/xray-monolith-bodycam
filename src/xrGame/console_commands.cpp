@@ -213,6 +213,7 @@ extern BOOL legs_dbg_no_hide;
 extern BOOL legs_dbg_calc_actor_in_shadow;
 extern BOOL legs_dbg_no_root_reset;
 extern BOOL legs_dbg_shadow_actor;
+extern BOOL legs_dbg_copy_render;
 
 extern BOOL r__actor_shadow_in_demo_record;
 
@@ -2864,6 +2865,7 @@ void CCC_RegisterCommands()
     CMD4(CCC_Integer, "g_legs_dbg_calc_actor_in_shadow", &legs_dbg_calc_actor_in_shadow, 0, 1);
     CMD4(CCC_Integer, "g_legs_dbg_no_root_reset", &legs_dbg_no_root_reset, 0, 1);
     CMD4(CCC_Integer, "g_legs_dbg_shadow_actor", &legs_dbg_shadow_actor, 0, 1);
+    CMD4(CCC_Integer, "g_legs_dbg_copy_render", &legs_dbg_copy_render, 0, 1);
 
     CMD4(CCC_Integer, "r__actor_shadow_in_demo_record", &r__actor_shadow_in_demo_record, 0, 1);
 
