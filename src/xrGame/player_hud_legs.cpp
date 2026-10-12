@@ -142,6 +142,7 @@ BOOL legs_dbg_no_hide = FALSE;
 BOOL legs_dbg_calc_actor_in_shadow = FALSE;
 BOOL legs_dbg_no_root_reset = FALSE;
 BOOL legs_dbg_copy_render = FALSE;
+BOOL legs_dbg_flip = FALSE;
 void player_legs_controller::copy_bones_from_actor(CActor* actor, bool isShadowPass)
 {
     if (!actor || !m_model)
@@ -269,6 +270,16 @@ void player_legs_controller::update(CActor* actor, bool isShadowPass)
     copy_bones_from_actor(actor, isShadowPass);
 
     m_legs_transform.set(actor->XFORM());
+    if (legs_dbg_flip)
+    {
+        // Rotate the legs body 180 degrees around the vertical axis
+        Fmatrix flip;
+        flip.rotateY(PI);
+        Fvector c = m_legs_transform.c;
+        m_legs_transform.c.set(0.f, 0.f, 0.f);
+        m_legs_transform.mulA_43(flip);
+        m_legs_transform.c = c;
+    }
     if (legs_attach_to_camera && pDemoRecords.empty())
         m_legs_transform.c.set(Device.vCameraPosition.x, m_legs_transform.c.y, Device.vCameraPosition.z);       
 
