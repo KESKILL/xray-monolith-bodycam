@@ -157,26 +157,37 @@ void player_legs_controller::copy_bones_from_actor(CActor* actor, bool isShadowP
     root_bi.mRenderTransform.mul_43(root_bi.mTransform,
         m_model->LL_GetData(legs_root).m2b_transform);
 
-    u16 bone_count = m_model->LL_BoneCount();
-    if (bone_count == actor_K->LL_BoneCount())
+    // Always match bones by name. Copying by index is only valid when both
+    // skeletons list their bones in the same order; models with the same bone
+    // count but a different bone order (e.g. GFY outfit models) otherwise get
+    // their limbs swapped/reversed.
+    for (auto& [bonename, ID] : *m_model->LL_Bones())
     {
-        for (u16 i = 0; i < bone_count; ++i)
+        auto BoneID = actor_K->LL_BoneID(bonename);
+        if (BoneID != BI_NONE)
         {
-            m_model->LL_GetTransform(i).set(actor_K->LL_GetTransform(i));
-            m_model->LL_GetTransform_R(i).set(actor_K->LL_GetTransform_R(i));
+            m_model->LL_GetTransform(ID).set(actor_K->LL_GetTransform(BoneID));
+            m_model->LL_GetTransform_R(ID).set(actor_K->LL_GetTransform_R(BoneID));
         }
     }
-    else
+
+    static shared_str s_logged_model;
+    if (s_logged_model != m_visual_name)
     {
+        s_logged_model = m_visual_name;
+        u16 matched = 0;
+        bool same_order = m_model->LL_BoneCount() == actor_K->LL_BoneCount();
         for (auto& [bonename, ID] : *m_model->LL_Bones())
         {
             auto BoneID = actor_K->LL_BoneID(bonename);
             if (BoneID != BI_NONE)
-            {
-                m_model->LL_GetTransform(ID).set(actor_K->LL_GetTransform(BoneID));
-                m_model->LL_GetTransform_R(ID).set(actor_K->LL_GetTransform_R(BoneID));
-            }
+                ++matched;
+            if (BoneID != ID)
+                same_order = false;
         }
+        Msg("~ [player_legs] legs model [%s] bones=%u, actor bones=%u, matched=%u, same_order=%s",
+            m_visual_name.c_str(), m_model->LL_BoneCount(), actor_K->LL_BoneCount(), matched,
+            same_order ? "yes" : "no");
     }
 
     if (!isShadowPass)
