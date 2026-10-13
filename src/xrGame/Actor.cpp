@@ -2246,10 +2246,26 @@ void CActor::renderable_Render(IDSGraphManager* DM)
                         PIItem pItem = inventory().ActiveItem();
                     if (pItem)
                     {
+                        // The item's renderable_Render() may recompute its XFORM from the
+                        // actor's hand bones (CHudItem calls UpdateXForm() first), which
+                        // would discard an offset applied beforehand and leave the weapon
+                        // shadow at the real actor position, detached from the legs-body
+                        // shadow. The render graph keeps a pointer to XFORM and reads it at
+                        // draw time, so apply the offset after registering, and re-apply it
+                        // whenever the transform was recomputed since the last adjustment.
+                        static u16 s_shadow_item_id = u16(-1);
+                        static Fvector s_shadow_item_c = { 0.f, 0.f, 0.f };
+
                         auto& v = pItem->object();
-                        if (needAdjust)
-                            v.XFORM().c.mad(diff, m);
                         v.renderable_Render(DM);
+
+                        Fvector& c = v.XFORM().c;
+                        if (s_shadow_item_id != v.ID() || !c.similar(s_shadow_item_c, EPS_S))
+                        {
+                            c.mad(diff, m);
+                            s_shadow_item_c.set(c);
+                            s_shadow_item_id = v.ID();
+                        }
                     }
 
                     // Move torch
