@@ -2239,32 +2239,27 @@ void CActor::renderable_Render(IDSGraphManager* DM)
                     // Render full body from legs controller without hiding bones for shadow correctness
                     // Solves potential issues with manipulating actor's XFORM
                         m_legs_controller.update(this, true);
-                        m_legs_controller.render(DM);
+                        m_legs_controller.render(DM, true);
 
                         // Ideally the active item also should be duplicated but leave this for now
                         // Move active item
                         PIItem pItem = inventory().ActiveItem();
                     if (pItem)
                     {
-                        // The item's renderable_Render() may recompute its XFORM from the
-                        // actor's hand bones (CHudItem calls UpdateXForm() first), which
-                        // would discard an offset applied beforehand and leave the weapon
-                        // shadow at the real actor position, detached from the legs-body
-                        // shadow. The render graph keeps a pointer to XFORM and reads it at
-                        // draw time, so apply the offset after registering, and re-apply it
-                        // whenever the transform was recomputed since the last adjustment.
-                        static u16 s_shadow_item_id = u16(-1);
-                        static Fvector s_shadow_item_c = { 0.f, 0.f, 0.f };
-
+                        // Render the active item's world visual with our own matrix
+                        // instead of moving its XFORM: the item's XFORM is recomputed
+                        // from the actor's hand bones by its own update code (possibly
+                        // between this call and the actual draw), which used to leave
+                        // the weapon shadow at the real actor position, in front of the
+                        // legs-body shadow. The render graph keeps a pointer to the
+                        // matrix, so it must stay valid until the draw: use a member.
+                        CHudItem* hud_item = smart_cast<CHudItem*>(pItem);
                         auto& v = pItem->object();
-                        v.renderable_Render(DM);
-
-                        Fvector& c = v.XFORM().c;
-                        if (s_shadow_item_id != v.ID() || !c.similar(s_shadow_item_c, EPS_S))
+                        if (v.Visual() && !(hud_item && hud_item->IsHidden()))
                         {
-                            c.mad(diff, m);
-                            s_shadow_item_c.set(c);
-                            s_shadow_item_id = v.ID();
+                            m_shadow_item_xform.set(v.XFORM());
+                            m_shadow_item_xform.c.mad(diff, m);
+                            DM->add_Dynamic(v.Visual(), &m_shadow_item_xform);
                         }
                     }
 
@@ -2280,17 +2275,6 @@ void CActor::renderable_Render(IDSGraphManager* DM)
                         }
                     }
 
-                    // Move bolt
-                    if (inventory().GetActiveSlot() == BOLT_SLOT)
-                    {
-                        auto bI = inventory().ItemFromSlot(BOLT_SLOT);
-                        if (bI)
-                        {
-                            auto& v = bI->object();
-                            if (needAdjust)
-                                v.XFORM().c.mad(diff, m);
-                        }
-                    }
                 }
                 else
                 {

@@ -13,14 +13,16 @@ BOOL g_legs_enabled = FALSE;
 
 void player_legs_controller::destroy()
 {
-    if (!m_model)
-        return;
+    for (IKinematics** K : { &m_model, &m_shadow_model })
+    {
+        if (!*K)
+            continue;
+        IRenderVisual* v = (*K)->dcast_RenderVisual();
+        if (v)
+            ::Render->model_Delete(v);
+        *K = nullptr;
+    }
 
-    IRenderVisual* v = m_model->dcast_RenderVisual();
-    if (v)
-        ::Render->model_Delete(v);
-
-    m_model = nullptr;
     m_visual_name = "";
 }
 
@@ -100,18 +102,13 @@ void player_legs_controller::warn_once(const char* fmt, ...)
     }
 }
 
-bool player_legs_controller::ensure_model(const shared_str& sect, const shared_str& model)
+IKinematics* player_legs_controller::create_model(const shared_str& model)
 {
-    if (m_model && m_visual_name == model)
-        return true;
-
-    destroy();
-
     IRenderVisual* raw = ::Render->model_Create(model.c_str());
     if (!raw)
     {
         warn_once("failed to create model [%s]", model.c_str());
-        return false;
+        return nullptr;
     }
 
     IKinematics* K = smart_cast<IKinematics*>(raw);
@@ -119,10 +116,27 @@ bool player_legs_controller::ensure_model(const shared_str& sect, const shared_s
     {
         ::Render->model_Delete(raw);
         warn_once("model [%s] is not a skeleton", model.c_str());
-        return false;
+        return nullptr;
     }
 
+    return K;
+}
+
+bool player_legs_controller::ensure_model(const shared_str& sect, const shared_str& model)
+{
+    if (m_model && m_visual_name == model)
+        return true;
+
+    destroy();
+
+    IKinematics* K = create_model(model);
+    if (!K)
+        return false;
+
     m_model = K;
+    // Second instance used only for the shadow pass, so hiding bones / the
+    // spine offset of the first-person legs never leak into the shadow.
+    m_shadow_model = create_model(model);
     m_visual_name = model;
 
     if (pSettings->line_exist(sect, "legs_fwd_offset"))
@@ -145,7 +159,9 @@ BOOL legs_dbg_copy_render = FALSE;
 BOOL legs_dbg_flip = FALSE;
 void player_legs_controller::copy_bones_from_actor(CActor* actor, bool isShadowPass)
 {
-    if (!actor || !m_model)
+    // The shadow pass poses its own model instance (full body, nothing hidden)
+    IKinematics* const target = (isShadowPass && m_shadow_model) ? m_shadow_model : m_model;
+    if (!actor || !target)
         return;
 
     IKinematics* actor_K = actor->Visual()->dcast_PKinematics();
@@ -160,35 +176,41 @@ void player_legs_controller::copy_bones_from_actor(CActor* actor, bool isShadowP
         m_model->CalculateBones_Invalidate();
         m_model->CalculateBones(TRUE);
     }
+    else if (isShadowPass && target == m_shadow_model)
+    {
+        // Once per frame (early-outs afterwards): marks the shadow model as
+        // calculated so the renderer never recomputes over the copied pose.
+        m_shadow_model->CalculateBones(TRUE);
+    }
 
-    u16 legs_root = m_model->LL_GetBoneRoot();
-    CBoneInstance& root_bi = m_model->LL_GetBoneInstance(legs_root);
+    u16 legs_root = target->LL_GetBoneRoot();
+    CBoneInstance& root_bi = target->LL_GetBoneInstance(legs_root);
     if (!legs_dbg_no_root_reset)
     {
         root_bi.mTransform.identity();
         root_bi.mRenderTransform.mul_43(root_bi.mTransform,
-            m_model->LL_GetData(legs_root).m2b_transform);
+            target->LL_GetData(legs_root).m2b_transform);
     }
 
     // Always match bones by name. Copying by index is only valid when both
     // skeletons list their bones in the same order; models with the same bone
     // count but a different bone order (e.g. GFY outfit models) otherwise get
     // their limbs swapped/reversed.
-    for (auto& [bonename, ID] : *m_model->LL_Bones())
+    for (auto& [bonename, ID] : *target->LL_Bones())
     {
         auto BoneID = actor_K->LL_BoneID(bonename);
         if (BoneID != BI_NONE)
         {
-            m_model->LL_GetTransform(ID).set(actor_K->LL_GetTransform(BoneID));
+            target->LL_GetTransform(ID).set(actor_K->LL_GetTransform(BoneID));
             // The render (skinning) transform includes the model's own inverse
             // bind pose (m2b). Rebuild it from the legs model's own bind pose
             // instead of copying the actor's: if the actor visual and the legs
             // visual differ (e.g. GFY replacing models), copying it twists the mesh.
             if (legs_dbg_copy_render)
-                m_model->LL_GetTransform_R(ID).set(actor_K->LL_GetTransform_R(BoneID));
+                target->LL_GetTransform_R(ID).set(actor_K->LL_GetTransform_R(BoneID));
             else
-                m_model->LL_GetTransform_R(ID).mul_43(m_model->LL_GetTransform(ID),
-                    m_model->LL_GetData(ID).m2b_transform);
+                target->LL_GetTransform_R(ID).mul_43(target->LL_GetTransform(ID),
+                    target->LL_GetData(ID).m2b_transform);
         }
     }
 
@@ -294,9 +316,10 @@ void player_legs_controller::update(CActor* actor, bool isShadowPass)
     actor->XFORMShadow.translate_over(m_legs_transform.c);
 }
 
-void player_legs_controller::render(IDSGraphManager* DM)
+void player_legs_controller::render(IDSGraphManager* DM, bool isShadowPass)
 {
-    if (!m_model)
+    IKinematics* const target = (isShadowPass && m_shadow_model) ? m_shadow_model : m_model;
+    if (!target)
         return;
 
     CActor* actor = Actor();
@@ -307,7 +330,7 @@ void player_legs_controller::render(IDSGraphManager* DM)
     if (move_state & mcClimb)
         return;
 
-    IRenderVisual* visual = m_model->dcast_RenderVisual();
+    IRenderVisual* visual = target->dcast_RenderVisual();
     if (!visual)
         return;    
 

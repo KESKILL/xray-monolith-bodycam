@@ -121,6 +121,7 @@ public:
 public:
     Fmatrix XFORMShadow;
     player_legs_controller m_legs_controller;
+    Fmatrix m_shadow_item_xform;
 
 public:
 
